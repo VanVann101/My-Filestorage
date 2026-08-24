@@ -142,6 +142,17 @@ aws s3 sync s3://<bucket-name> ./event-photos \
 Конфиг `rclone` для Яндекса: провайдер `Other`, endpoint
 `storage.yandexcloud.net`, region `ru-central1`.
 
+Если нужен именно единый zip-файл (а не просто папка на диске) — упакуйте
+результат отдельной командой, PowerShell умеет это без сторонних утилит:
+
+```powershell
+Compress-Archive -Path .\event-photos -DestinationPath event-archive.zip
+```
+
+Через веб-консоль Yandex Cloud скачать бакет архивом нельзя — она отдаёт
+объекты только по одному. Массовая выкачка возможна лишь через CLI
+(`aws s3`, `rclone`) или S3-клиенты с GUI (CyberDuck, WinSCP).
+
 **Перед удалением бакета:**
 
 1. Сверьте количество файлов и суммарный размер с тем, что показывает консоль.

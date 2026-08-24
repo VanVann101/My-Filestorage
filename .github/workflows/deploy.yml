@@ -38,7 +38,7 @@ jobs:
           YC_BUCKET: ${{ vars.YC_BUCKET }}
           EVENT_ID: ${{ vars.EVENT_ID }}
           EVENT_TITLE: ${{ vars.EVENT_TITLE }}
-          POLICY_DAYS: ${{ vars.POLICY_DAYS || '7' }}
+          POLICY_DAYS: ${{ vars.POLICY_DAYS || '150' }}
           MAX_FILE_MB: ${{ vars.MAX_FILE_MB || '2048' }}
         run: npm run policy
 

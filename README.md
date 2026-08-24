@@ -17,7 +17,8 @@ QR → GitHub Pages (статика) → POST multipart/form-data → Object Sto
 
 - писать можно **только** в бакет с ключом, начинающимся с `<EVENT_ID>/`;
 - размер одного файла — не больше `MAX_FILE_MB`;
-- подпись действует `POLICY_DAYS` дней и протухает сама.
+- подпись действует `POLICY_DAYS` дней и протухает сама (технического потолка
+  на срок нет — это просто дата в подписанном JSON, а не presigned URL).
 
 Читать, удалять или перечислять объекты подпись не позволяет — только класть новые.
 
@@ -42,10 +43,13 @@ QR → GitHub Pages (статика) → POST multipart/form-data → Object Sto
 
    | Параметр | Значение |
    |---|---|
-   | Источники | адрес вашей страницы, например `https://vanvann101.github.io` |
+   | Источники | адрес вашей страницы, например `https://<username>.github.io` |
    | Методы | `POST` |
    | Заголовки | `*` |
    | Время кеширования | 3600 |
+
+   Если проверяете локально через `npm run dev` — добавьте отдельным правилом
+   ещё и `http://localhost:<порт>`.
 
 5. **Проверить, что POST-политика работает** — самая важная проверка, сделайте
    её до всего остального (см. «Проверка перед событием»).
@@ -54,7 +58,7 @@ QR → GitHub Pages (статика) → POST multipart/form-data → Object Sto
 
 ```bash
 npm install
-cp .env.example .env      # заполнить ключами
+cp .env.example .env      # заполнить своими ключами и параметрами
 npm run policy            # сгенерирует public/policy.json
 npm run dev
 ```
@@ -67,6 +71,11 @@ GitHub Actions собирает и публикует на Pages при пуше
 **раз в сутки по расписанию** — чтобы подпись не протухла в самый неподходящий
 момент. Запустить вручную можно через `workflow_dispatch`.
 
+GitHub отключает `schedule`-крон, если в репозитории 60 дней подряд нет
+активности (коммитов, пушей). Если событие далеко впереди и репозиторий
+может «залежаться» — держите `POLICY_DAYS` с запасом, чтобы даже
+остановившийся крон не подвёл.
+
 В настройках репозитория укажите:
 
 **Secrets** (Settings → Secrets and variables → Actions → Secrets):
@@ -76,16 +85,17 @@ GitHub Actions собирает и публикует на Pages при пуше
 | `YC_ACCESS_KEY_ID` | идентификатор статического ключа |
 | `YC_SECRET_ACCESS_KEY` | секрет статического ключа |
 
-**Variables** (там же, вкладка Variables):
+**Variables** (там же, вкладка Variables) — значения свои, под конкретное
+событие и бакет:
 
-| Имя | Пример | Обязательна |
+| Имя | Что это | Обязательна |
 |---|---|---|
-| `YC_BUCKET` | `wedding-ivan-inna-2026` | да |
-| `EVENT_ID` | `wedding-2026` | да |
-| `EVENT_TITLE` | `Свадьба Ивана и Инны` | да |
-| `VITE_BASE` | `/My-Filestorage/` | если Pages на `vanvann101.github.io/<repo>/` |
-| `MAX_FILE_MB` | `2048` | нет, по умолчанию 2048 (2 ГБ) |
-| `POLICY_DAYS` | `7` | нет, по умолчанию 7 |
+| `YC_BUCKET` | имя бакета в Object Storage | да |
+| `EVENT_ID` | префикс ключей в бакете | да |
+| `EVENT_TITLE` | заголовок на странице | да |
+| `VITE_BASE` | `/<имя-репозитория>/`, если Pages на `<username>.github.io/<repo>/` | если применимо |
+| `MAX_FILE_MB` | максимальный размер файла, МБ | нет, по умолчанию 2048 (2 ГБ) |
+| `POLICY_DAYS` | сколько дней действует подпись | нет, по умолчанию 150 |
 
 В Settings → Pages выберите источник **GitHub Actions**.
 
@@ -119,13 +129,13 @@ npm run qr      # возьмёт PUBLIC_URL из .env, положит qr.png
 участвуют.
 
 ```bash
-rclone sync yc:wedding-ivan-inna-2026 ./event-photos --progress
+rclone sync yc:<bucket-name> ./event-photos --progress
 ```
 
 или
 
 ```bash
-aws s3 sync s3://wedding-ivan-inna-2026 ./event-photos \
+aws s3 sync s3://<bucket-name> ./event-photos \
   --endpoint-url https://storage.yandexcloud.net
 ```
 

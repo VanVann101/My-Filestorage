@@ -1,0 +1,193 @@
+:root {
+  --bg: #fbf7f1;
+  --ink: #2a2521;
+  --muted: #7b7269;
+  --line: #e6ddd1;
+  --accent: #9a5b3f;
+  --ok: #3f7a4f;
+  --err: #a33f33;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 24px 16px calc(32px + env(safe-area-inset-bottom));
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.app {
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.title {
+  margin: 8px 0 0;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.lead {
+  margin: 0;
+  color: var(--muted);
+}
+
+.lead.ok {
+  color: var(--ok);
+  font-weight: 500;
+}
+
+.hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.hint.warn {
+  color: var(--accent);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.input {
+  width: 100%;
+  padding: 14px;
+  font-size: 17px; /* меньше 16px — и Safari зумит страницу при фокусе */
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  font: inherit;
+  font-weight: 500;
+  text-align: center;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:active {
+  filter: brightness(0.92);
+}
+
+/* Настоящий input прячем, но оставляем доступным с клавиатуры:
+   display:none выкинул бы его из таб-порядка. */
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.file-input:focus-visible + .btn {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.link {
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.row-name {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-state {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.row-done .row-state {
+  color: var(--ok);
+}
+
+.row-error .row-state {
+  color: var(--err);
+}
+
+.bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  overflow: hidden;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.row-done .bar,
+.row-pending .bar,
+.row-error .bar {
+  visibility: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+.loading {
+  color: var(--muted);
+  text-align: center;
+}

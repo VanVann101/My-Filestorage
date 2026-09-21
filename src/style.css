@@ -103,6 +103,17 @@ body {
   filter: brightness(0.92);
 }
 
+.btn-secondary {
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  text-decoration: none;
+}
+
+.btn-secondary:active {
+  background: var(--bg);
+}
+
 /* Настоящий input прячем, но оставляем доступным с клавиатуры:
    display:none выкинул бы его из таб-порядка. */
 .file-input {
@@ -190,4 +201,101 @@ body {
 .loading {
   color: var(--muted);
   text-align: center;
+}
+
+.admin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.admin-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.lead.warn {
+  color: var(--err);
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.tile > a {
+  position: relative;
+  display: block;
+}
+
+.tile img,
+.tile video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: var(--bg);
+}
+
+.tile-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: #fff;
+  background: rgba(42, 37, 33, 0.55);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.tile-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 8px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  background: var(--bg);
+}
+
+.tile-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 8px;
+  font-size: 13px;
+}
+
+.tile-guest {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-caption .link {
+  flex-shrink: 0;
 }

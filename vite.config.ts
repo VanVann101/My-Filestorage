@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 // base подставляется в CI: для github.io/<repo>/ нужен префикс,
@@ -15,5 +16,14 @@ export default defineConfig({
   },
   build: {
     target: 'es2020',
+    rollupOptions: {
+      // Без явного input вторая страница молча не попадёт в dist —
+      // Vite по умолчанию собирает только корневой index.html.
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        gallery: fileURLToPath(new URL('./gallery.html', import.meta.url)),
+        admin: fileURLToPath(new URL('./admin.html', import.meta.url)),
+      },
+    },
   },
 });

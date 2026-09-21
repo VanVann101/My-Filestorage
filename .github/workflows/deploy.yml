@@ -45,6 +45,7 @@ jobs:
       - name: Build
         env:
           VITE_BASE: ${{ vars.VITE_BASE || '/' }}
+          VITE_ADMIN_PASSWORD: ${{ secrets.VITE_ADMIN_PASSWORD }}
         run: npm run build
 
       - uses: actions/upload-pages-artifact@v3

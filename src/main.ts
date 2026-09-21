@@ -41,14 +41,14 @@ async function boot() {
 // --- полная отрисовка: только когда меняется структура экрана ---
 
 function renderMessage(title: string, text: string) {
-  app.replaceChildren(el('h1', 'title', title), el('p', 'lead', text));
+  app.replaceChildren(el('h1', 'title', title), el('p', 'lead', text), renderGalleryLink());
 }
 
 function render() {
   rows.clear();
   summaryNode = null;
   app.replaceChildren();
-  app.append(el('h1', 'title', policy.eventTitle));
+  app.append(el('h1', 'title', policy.eventTitle), renderGalleryLink());
 
   if (!guest) {
     app.append(renderNameForm());
@@ -67,6 +67,14 @@ function render() {
   }
 
   app.append(renderFooter());
+}
+
+function renderGalleryLink(): HTMLElement {
+  const a = document.createElement('a');
+  a.className = 'btn btn-secondary';
+  a.href = `${import.meta.env.BASE_URL}gallery.html`;
+  a.textContent = 'Смотреть галерею →';
+  return a;
 }
 
 function renderNameForm(): HTMLElement {
@@ -122,6 +130,13 @@ function renderPicker(): HTMLElement {
     input,
     label,
     el('p', 'hint', `До ${formatMaxSize(policy.maxBytes)} на файл`),
+    el(
+      'p',
+      'hint',
+      'Если фото и видео много — выбирайте по 5–8 штук за раз, а видео добавляйте ' +
+        'отдельно и по одному. iPhone готовит файлы перед отправкой, и на большой ' +
+        'партии окно выбора может показаться зависшим.',
+    ),
   );
   return wrap;
 }

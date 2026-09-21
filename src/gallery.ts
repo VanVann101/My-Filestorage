@@ -26,6 +26,10 @@ let items: GalleryItem[] = [];
 let loading = false;
 let errorText: string | null = null;
 let sortMode: SortMode = 'new';
+/** Список в текущем порядке сортировки — лайтбокс листает именно по нему,
+ *  чтобы «следующее» совпадало с тем, что гость видит в сетке. */
+let visibleItems: GalleryItem[] = [];
+let lightboxIndex: number | null = null;
 
 async function boot() {
   try {
@@ -151,19 +155,20 @@ function renderUploadLink(): HTMLElement {
 }
 
 function renderGrid(): HTMLElement {
+  visibleItems = items.slice().sort(SORT_COMPARATORS[sortMode]);
   const grid = el('div', 'gallery-grid');
-  for (const item of items.slice().sort(SORT_COMPARATORS[sortMode])) grid.append(renderTile(item));
+  visibleItems.forEach((item, index) => grid.append(renderTile(item, index)));
   return grid;
 }
 
-function renderTile(item: GalleryItem): HTMLElement {
+function renderTile(item: GalleryItem, index: number): HTMLElement {
   const tile = el('div', `tile tile-${item.kind}`);
 
   if (item.kind === 'image') {
-    const link = document.createElement('a');
-    link.href = item.url;
-    link.target = '_blank';
-    link.rel = 'noopener';
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'tile-open';
+    open.addEventListener('click', () => openLightbox(index));
 
     const img = document.createElement('img');
     img.src = item.url;
@@ -174,15 +179,13 @@ function renderTile(item: GalleryItem): HTMLElement {
       img.replaceWith(el('span', 'tile-placeholder', 'нет предпросмотра'));
     });
 
-    link.append(img);
-    tile.append(link);
+    open.append(img);
+    tile.append(open);
   } else if (item.kind === 'video') {
-    // Тап по плитке открывает файл в новой вкладке — так же, как у фото:
-    // без обёртки <a> клик по <video> просто переключал бы play/pause на месте.
-    const link = document.createElement('a');
-    link.href = item.url;
-    link.target = '_blank';
-    link.rel = 'noopener';
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'tile-open';
+    open.addEventListener('click', () => openLightbox(index));
 
     const video = document.createElement('video');
     video.src = item.url;
@@ -205,9 +208,10 @@ function renderTile(item: GalleryItem): HTMLElement {
       playIcon.remove();
     });
 
-    link.append(video, playIcon);
-    tile.append(link);
+    open.append(video, playIcon);
+    tile.append(open);
   } else {
+    // Превью показать нечем — сразу отдаём файл по прямой ссылке, лайтбоксу тут нечего открывать.
     const link = document.createElement('a');
     link.href = item.url;
     link.target = '_blank';
@@ -237,6 +241,116 @@ function el(tag: string, className: string, text?: string): HTMLElement {
   node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+// --- лайтбокс: полноэкранный просмотр с перелистыванием ---
+// Создаётся один раз и живёт вне app, поэтому его не задевает render() сетки.
+
+let lightbox: HTMLElement;
+let lightboxContent: HTMLElement;
+let lightboxGuest: HTMLElement;
+let lightboxDownload: HTMLAnchorElement;
+
+function buildLightbox() {
+  lightbox = el('div', 'lightbox');
+  lightbox.hidden = true;
+
+  const close = el('button', 'lightbox-close', '×') as HTMLButtonElement;
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Закрыть');
+  close.addEventListener('click', closeLightbox);
+
+  const prev = el('button', 'lightbox-nav lightbox-prev', '‹') as HTMLButtonElement;
+  prev.type = 'button';
+  prev.setAttribute('aria-label', 'Предыдущее');
+  prev.addEventListener('click', () => showDelta(-1));
+
+  const next = el('button', 'lightbox-nav lightbox-next', '›') as HTMLButtonElement;
+  next.type = 'button';
+  next.setAttribute('aria-label', 'Следующее');
+  next.addEventListener('click', () => showDelta(1));
+
+  lightboxContent = el('div', 'lightbox-content');
+
+  lightboxGuest = el('span', 'hint');
+  lightboxDownload = document.createElement('a');
+  lightboxDownload.className = 'link';
+  lightboxDownload.target = '_blank';
+  lightboxDownload.rel = 'noopener';
+  lightboxDownload.textContent = 'Скачать';
+  const footer = el('div', 'lightbox-footer');
+  footer.append(lightboxGuest, lightboxDownload);
+
+  // Закрытие по тапу на тёмный фон — но не когда тап пришёлся на сам контент.
+  lightbox.addEventListener('click', (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+
+  let touchStartX = 0;
+  lightbox.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+  });
+  lightbox.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 50) showDelta(dx < 0 ? 1 : -1);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (lightbox.hidden) return;
+    if (e.key === 'Escape') closeLightbox();
+    else if (e.key === 'ArrowLeft') showDelta(-1);
+    else if (e.key === 'ArrowRight') showDelta(1);
+  });
+
+  lightbox.append(close, prev, lightboxContent, next, footer);
+  document.body.append(lightbox);
+}
+
+function openLightbox(index: number) {
+  if (!lightbox) buildLightbox();
+  lightboxIndex = index;
+  renderLightboxItem();
+  lightbox.hidden = false;
+}
+
+function closeLightbox() {
+  lightbox.hidden = true;
+  lightboxIndex = null;
+  lightboxContent.replaceChildren();
+}
+
+function showDelta(delta: number) {
+  if (lightboxIndex === null || !visibleItems.length) return;
+  lightboxIndex = (lightboxIndex + delta + visibleItems.length) % visibleItems.length;
+  renderLightboxItem();
+}
+
+function renderLightboxItem() {
+  if (lightboxIndex === null) return;
+  const item = visibleItems[lightboxIndex];
+  lightboxContent.replaceChildren();
+
+  if (item.kind === 'image') {
+    const img = document.createElement('img');
+    img.src = item.url;
+    img.alt = item.fileName;
+    img.addEventListener('error', () => {
+      img.replaceWith(el('p', 'lead', 'Не удалось загрузить превью'));
+    });
+    lightboxContent.append(img);
+  } else if (item.kind === 'video') {
+    const video = document.createElement('video');
+    video.src = item.url;
+    video.controls = true;
+    video.playsInline = true;
+    lightboxContent.append(video);
+  } else {
+    lightboxContent.append(el('p', 'lead', item.fileName));
+  }
+
+  lightboxGuest.textContent = item.guestSlug;
+  lightboxDownload.href = item.url;
+  lightboxDownload.download = item.fileName;
 }
 
 boot();

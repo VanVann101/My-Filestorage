@@ -312,6 +312,10 @@ body {
   flex-shrink: 0;
 }
 
+.lightbox[hidden] {
+  display: none;
+}
+
 .lightbox {
   position: fixed;
   inset: 0;

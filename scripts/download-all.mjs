@@ -35,6 +35,11 @@ const sk = required('YC_SECRET_ACCESS_KEY');
 const bucket = required('YC_BUCKET');
 const region = process.env.YC_REGION || 'ru-central1';
 const host = (process.env.YC_ENDPOINT || 'https://storage.yandexcloud.net').replace(/^https?:\/\//, '');
+// Листинг всегда напрямую (подписанным запросом) — список постоянно
+// меняется, кэшировать его через CDN смысла нет. А вот сами файлы, если
+// CDN настроен, отдаются из его кэша быстрее, чем напрямую из бакета —
+// и подпись им не нужна вообще, чтение публичное.
+const cdnEndpoint = (process.env.YC_CDN_ENDPOINT || '').replace(/\/+$/, '') || undefined;
 
 // Имя папки назначения — намеренно захардкожено, не параметризуем.
 const destDir = join(homedir(), 'Downloads', 'event-photos');
@@ -118,6 +123,8 @@ function guestAndFileName(key) {
   return { guestSlug, fileName };
 }
 
+console.log(`Раздача файлов: ${cdnEndpoint ? `через CDN (${cdnEndpoint})` : 'напрямую из бакета'}`);
+
 const allKeys = await listAllKeys();
 const keys = allKeys.filter(isMedia);
 console.log(`Объектов в бакете «${bucket}»: ${allKeys.length}, из них фото/видео: ${keys.length}\n`);
@@ -138,7 +145,11 @@ for (let i = 0; i < keys.length; i++) {
   // ДО запроса, чтобы на тяжёлом файле было видно, что скрипт не завис,
   // а просто качает конкретный файл.
   console.log(`  [${i + 1}/${keys.length}] ${key} …`);
-  const res = await fetch(`https://${host}${path}`, { headers: sign('GET', path, '', emptyHash) });
+  // Через CDN чтение публичное — подпись не нужна, зато файлы, которые уже
+  // кто-то смотрел в галерее, отдаются из кэша, а не из медленного истока.
+  const res = cdnEndpoint
+    ? await fetch(`${cdnEndpoint}/${key.split('/').map(encodeURIComponent).join('/')}`)
+    : await fetch(`https://${host}${path}`, { headers: sign('GET', path, '', emptyHash) });
   if (!res.ok) {
     console.error(`  [${i + 1}/${keys.length}] ! ${key} -> HTTP ${res.status}`);
     continue;

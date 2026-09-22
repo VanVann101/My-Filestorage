@@ -96,6 +96,16 @@ async function listAllKeys() {
   return keys;
 }
 
+// Те же расширения, что в src/gallery.ts и src/upload.ts — заодно отсеивает
+// служебные файлы вроде hidden-guests.json из админки.
+const IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp']);
+const VIDEO_EXT = new Set(['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv']);
+
+function isMedia(key) {
+  const ext = key.split('.').pop()?.toLowerCase() ?? '';
+  return IMAGE_EXT.has(ext) || VIDEO_EXT.has(ext);
+}
+
 // Ключ вида <EVENT_ID>/<guest-slug>/<uuid>_<имя>.ext — uuid никогда не
 // содержит "_", поэтому по первому "_" в последнем сегменте надёжно
 // отделяется исходное имя файла.
@@ -108,11 +118,12 @@ function guestAndFileName(key) {
   return { guestSlug, fileName };
 }
 
-const keys = await listAllKeys();
-console.log(`Объектов в бакете «${bucket}»: ${keys.length}\n`);
+const allKeys = await listAllKeys();
+const keys = allKeys.filter(isMedia);
+console.log(`Объектов в бакете «${bucket}»: ${allKeys.length}, из них фото/видео: ${keys.length}\n`);
 
 if (!keys.length) {
-  console.log('Бакет пуст — скачивать нечего.');
+  console.log('Фото и видео не найдено — скачивать нечего.');
   process.exit(0);
 }
 

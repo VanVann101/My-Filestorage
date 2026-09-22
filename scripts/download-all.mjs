@@ -125,6 +125,26 @@ function guestAndFileName(key) {
 
 console.log(`Раздача файлов: ${cdnEndpoint ? `через CDN (${cdnEndpoint})` : 'напрямую из бакета'}`);
 
+// Через CDN чтение публичное — подпись не нужна, зато файлы, которые уже
+// кто-то смотрел в галерее, отдаются из кэша, а не из медленного истока.
+// На больших файлах (видео) CDN иногда обрывает соединение на середине —
+// в этом случае повторяем тот же файл напрямую из бакета, а не сдаёмся.
+async function fetchFile(key, path) {
+  if (cdnEndpoint) {
+    try {
+      const url = `${cdnEndpoint}/${key.split('/').map(encodeURIComponent).join('/')}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    } catch (err) {
+      console.error(`    CDN не отдал файл (${err.message ?? err}), пробую напрямую из бакета…`);
+    }
+  }
+  const res = await fetch(`https://${host}${path}`, { headers: sign('GET', path, '', emptyHash) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
 const allKeys = await listAllKeys();
 const keys = allKeys.filter(isMedia);
 console.log(`Объектов в бакете «${bucket}»: ${allKeys.length}, из них фото/видео: ${keys.length}\n`);
@@ -145,16 +165,14 @@ for (let i = 0; i < keys.length; i++) {
   // ДО запроса, чтобы на тяжёлом файле было видно, что скрипт не завис,
   // а просто качает конкретный файл.
   console.log(`  [${i + 1}/${keys.length}] ${key} …`);
-  // Через CDN чтение публичное — подпись не нужна, зато файлы, которые уже
-  // кто-то смотрел в галерее, отдаются из кэша, а не из медленного истока.
-  const res = cdnEndpoint
-    ? await fetch(`${cdnEndpoint}/${key.split('/').map(encodeURIComponent).join('/')}`)
-    : await fetch(`https://${host}${path}`, { headers: sign('GET', path, '', emptyHash) });
-  if (!res.ok) {
-    console.error(`  [${i + 1}/${keys.length}] ! ${key} -> HTTP ${res.status}`);
+
+  let buf;
+  try {
+    buf = await fetchFile(key, path);
+  } catch (err) {
+    console.error(`  [${i + 1}/${keys.length}] ! ${key} -> ${err.message ?? err}`);
     continue;
   }
-  const buf = Buffer.from(await res.arrayBuffer());
 
   const { guestSlug, fileName } = guestAndFileName(key);
   let name = guestSlug ? `${guestSlug}_${fileName}` : fileName;

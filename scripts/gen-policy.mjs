@@ -39,6 +39,9 @@ const secretAccessKey = required('YC_SECRET_ACCESS_KEY');
 const bucket = required('YC_BUCKET');
 const region = process.env.YC_REGION || 'ru-central1';
 const endpoint = process.env.YC_ENDPOINT || 'https://storage.yandexcloud.net';
+// Опционально: домен CDN перед тем же бакетом, для ускорения раздачи гостям.
+// Не влияет на подпись — загрузка и листинг всегда идут напрямую в бакет.
+const cdnEndpoint = process.env.YC_CDN_ENDPOINT || undefined;
 const eventId = process.env.EVENT_ID || 'event';
 const eventTitle = process.env.EVENT_TITLE || 'Наше событие';
 const days = Number(process.env.POLICY_DAYS || 7);
@@ -81,6 +84,7 @@ const signature = createHmac('sha256', signingKey).update(policyB64, 'utf8').dig
 
 const out = {
   endpoint: `${endpoint}/${bucket}`,
+  cdnEndpoint,
   prefix,
   eventTitle,
   maxBytes,
@@ -103,3 +107,4 @@ console.log(`  бакет:        ${bucket}`);
 console.log(`  префикс:      ${prefix}`);
 console.log(`  макс. файл:   ${maxFileMb} МБ`);
 console.log(`  действует до: ${out.expiresAt}`);
+console.log(`  CDN:          ${cdnEndpoint ?? '(не задан, раздача напрямую из бакета)'}`);

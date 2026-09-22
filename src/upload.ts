@@ -42,12 +42,13 @@ class UploadError extends Error {
 function postOnce(
   policy: Policy,
   guest: string,
+  key: string,
   item: UploadItem,
   onProgress: (fraction: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const form = new FormData();
-    form.append('key', buildKey(policy, guest, item.file));
+    form.append('key', key);
     for (const [name, value] of Object.entries(policy.fields)) {
       form.append(name, value);
     }
@@ -99,6 +100,22 @@ function describe(status: number, code?: string): string {
 }
 
 const MAX_ATTEMPTS = 3;
+const VIDEO_EXT = new Set(['mp4', 'mov', 'webm', 'm4v', 'avi', 'mkv']);
+
+/** После успешной заливки видео сама «прогревает» его в кэше CDN одним фоновым
+ *  запросом — иначе первым, кто получит медленную раздачу из истока, окажется
+ *  случайный гость в галерее, а не тот, кто и так уже прождал свою загрузку.
+ *  Фото не трогаем — они и так лёгкие, прогрев не даёт ощутимой выгоды. */
+function warmCdnCache(policy: Policy, key: string) {
+  if (!policy.cdnEndpoint) return;
+  const ext = key.split('.').pop()?.toLowerCase() ?? '';
+  if (!VIDEO_EXT.has(ext)) return;
+
+  const url = `${policy.cdnEndpoint}/${key.split('/').map(encodeURIComponent).join('/')}`;
+  fetch(url, { cache: 'no-store' }).catch(() => {
+    // Не получилось прогреть — не страшно, просто первый зритель словит холодную раздачу.
+  });
+}
 
 export async function uploadItem(
   policy: Policy,
@@ -111,15 +128,20 @@ export async function uploadItem(
   item.progress = 0;
   onChange();
 
+  // Считаем один раз на весь набор попыток: раньше при ретрае генерился новый
+  // UUID и файл лип на новый ключ, а не переотправлялся на тот же самый.
+  const key = buildKey(policy, guest, item.file);
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     item.attempts++;
     try {
-      await postOnce(policy, guest, item, (fraction) => {
+      await postOnce(policy, guest, key, item, (fraction) => {
         item.progress = fraction;
         onChange();
       });
       item.status = 'done';
       onChange();
+      warmCdnCache(policy, key);
       return;
     } catch (err) {
       const uploadErr = err instanceof UploadError ? err : new UploadError('Неизвестная ошибка', true);

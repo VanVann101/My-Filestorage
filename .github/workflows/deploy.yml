@@ -36,6 +36,7 @@ jobs:
           YC_ACCESS_KEY_ID: ${{ secrets.YC_ACCESS_KEY_ID }}
           YC_SECRET_ACCESS_KEY: ${{ secrets.YC_SECRET_ACCESS_KEY }}
           YC_BUCKET: ${{ vars.YC_BUCKET }}
+          YC_CDN_ENDPOINT: ${{ vars.YC_CDN_ENDPOINT }}
           EVENT_ID: ${{ vars.EVENT_ID }}
           EVENT_TITLE: ${{ vars.EVENT_TITLE }}
           POLICY_DAYS: ${{ vars.POLICY_DAYS || '150' }}

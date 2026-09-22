@@ -87,7 +87,10 @@ function toGalleryItem(obj: S3Object): GalleryItem {
   const underscoreIdx = tail.indexOf('_');
   const fileName = underscoreIdx === -1 ? tail : tail.slice(underscoreIdx + 1);
 
-  const url = `${policy.endpoint}/${obj.key.split('/').map(encodeURIComponent).join('/')}`;
+  // Листинг и загрузка всегда идут напрямую в бакет — сама раздача файлов,
+  // если настроен CDN, через него: там кэш, а не throttling истока.
+  const base = policy.cdnEndpoint ?? policy.endpoint;
+  const url = `${base}/${obj.key.split('/').map(encodeURIComponent).join('/')}`;
 
   return { key: obj.key, url, size: obj.size, lastModified: obj.lastModified, fileName, guestSlug, kind: kindOf(fileName) };
 }

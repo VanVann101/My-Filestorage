@@ -1,6 +1,9 @@
 export interface Policy {
   /** https://storage.yandexcloud.net/<bucket> — цель POST-запроса */
   endpoint: string;
+  /** Домен CDN перед тем же бакетом (опционально) — используется только
+   *  для чтения (превью/скачивание), не для загрузки и не для листинга. */
+  cdnEndpoint?: string;
   /** Префикс ключа, разрешённый политикой */
   prefix: string;
   eventTitle: string;

@@ -1,16 +1,15 @@
 #!/usr/bin/env node
-// Скачивает все объекты бакета во временную папку, упаковывает в один zip
-// и кладёт его в Downloads — временные файлы после архивации удаляются,
-// на диске остаётся только сам архив.
+// Скачивает все объекты бакета в одну плоскую папку в Downloads — без
+// архивации и без подпапок по гостям. Имена файлов восстановлены (без
+// служебного uuid), с префиксом гостя — чтобы не путать чужие IMG_1234.
 //
-// Запуск: node scripts/download-archive.mjs   (или npm run archive)
+// Запуск: node scripts/download-all.mjs   (или npm run download)
 
 import { createHash, createHmac } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { readFileSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir, homedir } from 'node:os';
+import { homedir } from 'node:os';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -37,11 +36,8 @@ const bucket = required('YC_BUCKET');
 const region = process.env.YC_REGION || 'ru-central1';
 const host = (process.env.YC_ENDPOINT || 'https://storage.yandexcloud.net').replace(/^https?:\/\//, '');
 
-// Отдельные файлы качаются сюда — папка временная и удаляется сразу после архивации.
-const workDir = join(tmpdir(), `download-archive-${bucket}-${Date.now()}`);
-// Единственное, что остаётся на диске после работы скрипта.
-const downloadsDir = join(homedir(), 'Downloads');
-const zipPath = join(downloadsDir, `${bucket}.zip`);
+// Имя папки назначения — намеренно захардкожено, не параметризуем.
+const destDir = join(homedir(), 'Downloads', 'event-photos');
 
 function sign(method, path, query, payloadHash) {
   const amzDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
@@ -77,7 +73,7 @@ function sign(method, path, query, payloadHash) {
 const emptyHash = createHash('sha256').update('').digest('hex');
 
 // Список объектов постранично: список из 1000+ файлов сервер отдаёт по частям,
-// без учёта continuation-token часть архива тихо потерялась бы.
+// без учёта continuation-token часть файлов тихо потерялась бы.
 async function listAllKeys() {
   const keys = [];
   let token = '';
@@ -100,17 +96,30 @@ async function listAllKeys() {
   return keys;
 }
 
+// Ключ вида <EVENT_ID>/<guest-slug>/<uuid>_<имя>.ext — uuid никогда не
+// содержит "_", поэтому по первому "_" в последнем сегменте надёжно
+// отделяется исходное имя файла.
+function guestAndFileName(key) {
+  const segments = key.split('/');
+  const guestSlug = segments[1] ?? '';
+  const tail = segments[segments.length - 1];
+  const underscoreIdx = tail.indexOf('_');
+  const fileName = underscoreIdx === -1 ? tail : tail.slice(underscoreIdx + 1);
+  return { guestSlug, fileName };
+}
+
 const keys = await listAllKeys();
 console.log(`Объектов в бакете «${bucket}»: ${keys.length}\n`);
 
 if (!keys.length) {
-  console.log('Бакет пуст — архивировать нечего.');
+  console.log('Бакет пуст — скачивать нечего.');
   process.exit(0);
 }
 
-mkdirSync(workDir, { recursive: true });
+mkdirSync(destDir, { recursive: true });
 
 let totalBytes = 0;
+const usedNames = new Map();
 for (let i = 0; i < keys.length; i++) {
   const key = keys[i];
   const path = `/${bucket}/${key}`;
@@ -120,31 +129,22 @@ for (let i = 0; i < keys.length; i++) {
     continue;
   }
   const buf = Buffer.from(await res.arrayBuffer());
-  const localPath = join(workDir, key);
-  mkdirSync(dirname(localPath), { recursive: true });
-  writeFileSync(localPath, buf);
+
+  const { guestSlug, fileName } = guestAndFileName(key);
+  let name = guestSlug ? `${guestSlug}_${fileName}` : fileName;
+  // Все файлы в одной папке — совпадения по имени (два гостя с IMG_1234)
+  // разруливаем суффиксом, а не тихой перезаписью.
+  const uses = usedNames.get(name) ?? 0;
+  usedNames.set(name, uses + 1);
+  if (uses > 0) {
+    const dotIdx = name.lastIndexOf('.');
+    name = dotIdx === -1 ? `${name} (${uses + 1})` : `${name.slice(0, dotIdx)} (${uses + 1})${name.slice(dotIdx)}`;
+  }
+
+  writeFileSync(join(destDir, name), buf);
   totalBytes += buf.length;
-  console.log(`  [${i + 1}/${keys.length}] ${key}  (${(buf.length / 1024).toFixed(0)} КБ)`);
+  console.log(`  [${i + 1}/${keys.length}] ${name}  (${(buf.length / 1024).toFixed(0)} КБ)`);
 }
 
-console.log(`\nСкачано: ${keys.length} файлов, ${(totalBytes / 1024 / 1024).toFixed(1)} МБ`);
-
-mkdirSync(downloadsDir, { recursive: true });
-if (existsSync(zipPath)) rmSync(zipPath, { force: true });
-
-console.log('\nСобираю zip-архив...');
-try {
-  execFileSync(
-    'powershell',
-    ['-NoProfile', '-Command', `Compress-Archive -Path "${workDir}\\*" -DestinationPath "${zipPath}" -Force`],
-    { stdio: 'inherit' },
-  );
-} catch {
-  console.error('\nНе удалось собрать zip автоматически (нужен Windows PowerShell).');
-  console.error(`Файлы остались в ${workDir} — заархивируйте вручную, затем удалите эту папку.`);
-  process.exit(1);
-}
-
-// Архив в Downloads готов — временные файлы больше не нужны.
-rmSync(workDir, { recursive: true, force: true });
-console.log(`\nГотово: ${zipPath}`);
+console.log(`\nГотово: ${keys.length} файлов, ${(totalBytes / 1024 / 1024).toFixed(1)} МБ`);
+console.log(`Папка: ${destDir}`);

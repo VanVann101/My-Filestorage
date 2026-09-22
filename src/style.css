@@ -216,6 +216,14 @@ body {
   accent-color: var(--accent);
 }
 
+.admin-guest-row {
+  align-items: center;
+}
+
+.admin-guest-info {
+  grid-column: 1 / -1;
+}
+
 .lead.warn {
   color: var(--err);
 }

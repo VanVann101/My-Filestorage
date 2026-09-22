@@ -1,24 +1,34 @@
 import './style.css';
+import JSZip from 'jszip';
 import { HIDDEN_GUESTS_FILE, type Policy, type S3Object } from './types';
 import { listAllObjects } from './s3-list';
 
 const app = document.getElementById('app') as HTMLElement;
 
 const UNLOCK_KEY = 'admin-unlocked';
+// Архив крупнее — предупреждаем: он собирается в памяти вкладки браузера,
+// на большом объёме она может зависнуть или упасть. Для таких объёмов
+// надёжнее `npm run archive` — он пишет файлы на диск по одному, без лимита.
+const WARN_ARCHIVE_BYTES = 1.5 * 1024 * 1024 * 1024;
 
-interface GuestCount {
+interface GuestGroup {
   slug: string;
-  count: number;
+  objects: S3Object[];
+  totalSize: number;
 }
 
 let policy: Policy;
-let guests: GuestCount[] = [];
+let guests: GuestGroup[] = [];
 let hidden = new Set<string>();
 let loading = false;
 let errorText: string | null = null;
 let saving = false;
 let saveError: string | null = null;
 let savedJustNow = false;
+let downloadingSlug: string | null = null;
+let downloadProgress = '';
+let downloadError: string | null = null;
+let lastDownloadSlug: string | null = null;
 
 async function boot() {
   if (!import.meta.env.VITE_ADMIN_PASSWORD) {
@@ -84,7 +94,7 @@ async function load() {
       loadHidden(),
     ]);
     hidden = hiddenList;
-    guests = countGuests(objects);
+    guests = groupByGuest(objects);
   } catch (err) {
     errorText = err instanceof Error ? err.message : 'Неизвестная ошибка';
   } finally {
@@ -104,18 +114,33 @@ async function loadHidden(): Promise<Set<string>> {
   }
 }
 
-function countGuests(objects: S3Object[]): GuestCount[] {
-  const counts = new Map<string, number>();
+function groupByGuest(objects: S3Object[]): GuestGroup[] {
+  const bySlug = new Map<string, S3Object[]>();
   for (const obj of objects) {
     const rest = obj.key.slice(policy.prefix.length);
     const slashIdx = rest.indexOf('/');
     if (slashIdx === -1) continue; // системный файл вроде hidden-guests.json, не фото гостя
     const slug = rest.slice(0, slashIdx);
-    counts.set(slug, (counts.get(slug) ?? 0) + 1);
+    const list = bySlug.get(slug);
+    if (list) list.push(obj);
+    else bySlug.set(slug, [obj]);
   }
-  return [...counts.entries()]
-    .map(([slug, count]) => ({ slug, count }))
+  return [...bySlug.entries()]
+    .map(([slug, list]) => ({ slug, objects: list, totalSize: list.reduce((sum, o) => sum + o.size, 0) }))
     .sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+/** uuid никогда не содержит "_", поэтому надёжно отделяет исходное имя файла
+ *  от служебного префикса ключа — та же логика, что и в gallery.ts. */
+function recoverFileName(key: string): string {
+  const tail = key.slice(key.lastIndexOf('/') + 1);
+  const underscoreIdx = tail.indexOf('_');
+  return underscoreIdx === -1 ? tail : tail.slice(underscoreIdx + 1);
+}
+
+function formatBytes(bytes: number): string {
+  const mb = bytes / 1024 / 1024;
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} ГБ` : `${Math.round(mb)} МБ`;
 }
 
 // --- отрисовка ---
@@ -156,7 +181,7 @@ function render() {
 function renderGuestList(): HTMLElement {
   const list = el('ul', 'list');
   for (const guest of guests) {
-    const li = el('li', 'row');
+    const li = el('li', 'row admin-guest-row');
     const label = document.createElement('label');
     label.className = 'admin-toggle';
 
@@ -172,11 +197,30 @@ function renderGuestList(): HTMLElement {
       else hidden.add(guest.slug);
     });
 
-    label.append(checkbox, document.createTextNode(`${guest.slug} (${guest.count})`));
-    li.append(label);
+    label.append(
+      checkbox,
+      document.createTextNode(`${guest.slug} (${guest.objects.length}, ${formatBytes(guest.totalSize)})`),
+    );
+    li.append(label, renderDownloadButton(guest));
+
+    if (downloadingSlug === guest.slug) {
+      li.append(el('p', 'hint admin-guest-info', downloadProgress));
+    } else if (downloadError && downloadingSlug === null && guest.slug === lastDownloadSlug) {
+      li.append(el('p', 'lead warn admin-guest-info', downloadError));
+    }
+
     list.append(li);
   }
   return list;
+}
+
+function renderDownloadButton(guest: GuestGroup): HTMLElement {
+  const busy = downloadingSlug === guest.slug;
+  const btn = el('button', 'link', busy ? 'Собираю…' : 'Скачать архивом') as HTMLButtonElement;
+  btn.type = 'button';
+  btn.disabled = downloadingSlug !== null;
+  btn.addEventListener('click', () => void downloadGuestArchive(guest));
+  return btn;
 }
 
 function renderSaveButton(): HTMLElement {
@@ -218,6 +262,70 @@ async function saveHidden(list: string[]): Promise<void> {
     const text = await res.text();
     const code = text.match(/<Code>([^<]+)<\/Code>/)?.[1];
     throw new Error(`Ошибка сохранения ${res.status}${code ? ` (${code})` : ''}`);
+  }
+}
+
+async function downloadGuestArchive(guest: GuestGroup) {
+  if (guest.totalSize > WARN_ARCHIVE_BYTES) {
+    const ok = confirm(
+      `Архив «${guest.slug}» весит ${formatBytes(guest.totalSize)} — он собирается в памяти вкладки ` +
+        'и на таком объёме браузер может зависнуть или упасть. Для больших объёмов надёжнее ' +
+        '`npm run archive` с компьютера. Всё равно попробовать через браузер?',
+    );
+    if (!ok) return;
+  }
+
+  downloadingSlug = guest.slug;
+  lastDownloadSlug = guest.slug;
+  downloadError = null;
+  render();
+
+  const zip = new JSZip();
+  const usedNames = new Map<string, number>();
+  let done = 0;
+  let failed = 0;
+
+  for (const obj of guest.objects) {
+    downloadProgress = `Скачиваю файлы: ${done}/${guest.objects.length}${failed ? ` (${failed} не удалось)` : ''}`;
+    render();
+
+    try {
+      const url = `${policy.endpoint}/${obj.key.split('/').map(encodeURIComponent).join('/')}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+
+      let name = recoverFileName(obj.key);
+      const uses = usedNames.get(name) ?? 0;
+      usedNames.set(name, uses + 1);
+      if (uses > 0) {
+        const dotIdx = name.lastIndexOf('.');
+        name = dotIdx === -1 ? `${name} (${uses + 1})` : `${name.slice(0, dotIdx)} (${uses + 1})${name.slice(dotIdx)}`;
+      }
+      zip.file(name, blob);
+    } catch {
+      failed++;
+    }
+    done++;
+  }
+
+  downloadProgress = 'Упаковываю архив…';
+  render();
+
+  try {
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${guest.slug}.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    downloadError = failed ? `Готово, но ${failed} из ${guest.objects.length} файлов не удалось скачать` : null;
+  } catch (err) {
+    downloadError = err instanceof Error ? err.message : 'Не удалось собрать архив';
+  } finally {
+    downloadingSlug = null;
+    render();
   }
 }
 

@@ -191,7 +191,9 @@ function renderTile(item: GalleryItem, index: number): HTMLElement {
     open.addEventListener('click', () => openLightbox(index));
 
     const video = document.createElement('video');
-    video.src = item.url;
+    // src не ставим сразу: у <video>, в отличие от <img>, нет loading="lazy" —
+    // без этого браузер начал бы качать метаданные (и по хуку ниже — первый
+    // кадр) сразу у всех видео в сетке, а не только у видимых на экране.
     video.preload = 'metadata';
     video.muted = true;
     video.playsInline = true;
@@ -202,6 +204,7 @@ function renderTile(item: GalleryItem, index: number): HTMLElement {
     video.addEventListener('loadedmetadata', () => {
       video.currentTime = Math.min(0.1, video.duration || 0.1);
     });
+    observeVideo(video, item.url);
 
     const playIcon = el('span', 'tile-play', '▶');
     // Кодек, которого нет у браузера (например HEVC .mov вне Safari/iOS),
@@ -237,6 +240,26 @@ function renderTile(item: GalleryItem, index: number): HTMLElement {
 
   tile.append(caption);
   return tile;
+}
+
+/** Ручная замена loading="lazy" для <video> — у элемента такого атрибута
+ *  нет. rootMargin с запасом, чтобы к моменту прокрутки до плитки метаданные
+ *  уже успели подгрузиться, а не грузились на глазах у гостя. */
+const videoLazyLoader = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const video = entry.target as HTMLVideoElement;
+      video.src = video.dataset.src ?? '';
+      videoLazyLoader.unobserve(video);
+    }
+  },
+  { rootMargin: '200px' },
+);
+
+function observeVideo(video: HTMLVideoElement, url: string) {
+  video.dataset.src = url;
+  videoLazyLoader.observe(video);
 }
 
 function el(tag: string, className: string, text?: string): HTMLElement {

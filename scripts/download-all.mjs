@@ -134,6 +134,10 @@ const usedNames = new Map();
 for (let i = 0; i < keys.length; i++) {
   const key = keys[i];
   const path = `/${bucket}/${key}`;
+  // Раздача из бакета напрямую (без CDN) бывает медленной — печатаем строку
+  // ДО запроса, чтобы на тяжёлом файле было видно, что скрипт не завис,
+  // а просто качает конкретный файл.
+  console.log(`  [${i + 1}/${keys.length}] ${key} …`);
   const res = await fetch(`https://${host}${path}`, { headers: sign('GET', path, '', emptyHash) });
   if (!res.ok) {
     console.error(`  [${i + 1}/${keys.length}] ! ${key} -> HTTP ${res.status}`);
